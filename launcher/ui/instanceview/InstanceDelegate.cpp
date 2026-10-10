@@ -36,6 +36,7 @@
 #include "InstanceDelegate.h"
 #include <QApplication>
 #include <QDebug>
+#include <QFontMetrics>
 #include <QPainter>
 #include <QTextLayout>
 #include <QTextOption>
@@ -130,8 +131,127 @@ static QSize viewItemTextSize(const QStyleOptionViewItem* option)
     return QSize(size.width() + 2 * textMargin, size.height());
 }
 
+namespace {
+// Tile mode metrics
+constexpr int kTileCellWidth = 136;  // width of one grid cell
+constexpr int kTileInset = 4;        // empty space around the card inside its cell
+constexpr int kTileIconSize = 56;
+constexpr int kTilePaddingTop = 14;
+constexpr int kTileIconTextGap = 8;
+constexpr int kTilePaddingBottom = 12;
+constexpr int kTilePaddingSide = 8;
+constexpr int kTileTextLines = 2;
+constexpr qreal kTileRadius = 7.0;
+
+QColor blendColors(const QColor& from, const QColor& to, float amount)
+{
+    return QColor::fromRgbF(from.redF() + (to.redF() - from.redF()) * amount, from.greenF() + (to.greenF() - from.greenF()) * amount,
+                            from.blueF() + (to.blueF() - from.blueF()) * amount);
+}
+}  // namespace
+
+int ListViewDelegate::itemWidth() const
+{
+    return m_tileMode ? kTileCellWidth : 100;
+}
+
+QRect ListViewDelegate::tileTextRect(const QRect& cell, const QFont& font) const
+{
+    const QFontMetrics metrics(font);
+    const int top = cell.top() + kTileInset + kTilePaddingTop + kTileIconSize + kTileIconTextGap;
+    const int left = cell.left() + kTileInset + kTilePaddingSide;
+    const int width = cell.width() - 2 * (kTileInset + kTilePaddingSide);
+    return QRect(left, top, width, kTileTextLines * metrics.lineSpacing());
+}
+
+void ListViewDelegate::paintTile(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    QStyleOptionViewItem opt = option;
+    initStyleOption(&opt, index);
+    opt.text = index.data().toString();
+
+    painter->save();
+    painter->setClipRect(opt.rect);
+    painter->setRenderHint(QPainter::Antialiasing, true);
+
+    const bool selected = opt.state.testFlag(QStyle::State_Selected);
+    const bool enabled = opt.state.testFlag(QStyle::State_Enabled);
+
+    // the card
+    const QRect cardRect = opt.rect.adjusted(kTileInset, kTileInset, -kTileInset, -kTileInset);
+    // the main window shows the instance view on the window background (see MainWindow), so blend from that
+    const QColor background = opt.palette.color(QPalette::Window);
+    const QColor foreground = opt.palette.color(QPalette::Text);
+    const QColor fill = blendColors(background, foreground, selected ? 0.12f : 0.07f);
+    const QColor border = selected ? foreground : blendColors(background, foreground, 0.15f);
+    painter->setPen(QPen(border, selected ? 1.5 : 1.0));
+    painter->setBrush(fill);
+    painter->drawRoundedRect(QRectF(cardRect).adjusted(0.5, 0.5, -0.5, -0.5), kTileRadius, kTileRadius);
+
+    // the icon (QIcon::Selected would tint it with the highlight color, which does not fit the card look)
+    const QIcon::Mode mode = enabled ? QIcon::Normal : QIcon::Disabled;
+    const QIcon::State state = opt.state.testFlag(QStyle::State_Open) ? QIcon::On : QIcon::Off;
+    const QRect iconRect(cardRect.left() + (cardRect.width() - kTileIconSize) / 2, cardRect.top() + kTilePaddingTop, kTileIconSize,
+                         kTileIconSize);
+    opt.icon.paint(painter, iconRect, Qt::AlignCenter, mode, state);
+
+    // the label, wrapped to at most kTileTextLines lines and elided after that
+    QPalette::ColorGroup cg = enabled ? QPalette::Normal : QPalette::Disabled;
+    if (cg == QPalette::Normal && !opt.state.testFlag(QStyle::State_Active))
+        cg = QPalette::Inactive;
+    painter->setPen(opt.palette.color(cg, QPalette::Text));
+    painter->setFont(opt.font);
+
+    const QRect textRect = tileTextRect(opt.rect, opt.font);
+    QTextOption textOption;
+    textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    textOption.setTextDirection(opt.direction);
+    textOption.setAlignment(Qt::AlignHCenter);
+    QTextLayout textLayout;
+    textLayout.setTextOption(textOption);
+    textLayout.setFont(opt.font);
+    textLayout.setText(opt.text);
+    qreal layoutHeight = 0;
+    qreal layoutWidth = 0;
+    viewItemTextLayout(textLayout, textRect.width(), layoutHeight, layoutWidth);
+
+    const QFontMetrics metrics(opt.font);
+    const int lineCount = textLayout.lineCount();
+    const int shownLines = qMin(lineCount, kTileTextLines);
+    // vertically center a single line label inside the two line text area
+    const int verticalOffset = shownLines < kTileTextLines ? (kTileTextLines - shownLines) * metrics.lineSpacing() / 2 : 0;
+    const QPointF position(textRect.left(), textRect.top() + verticalOffset);
+    for (int i = 0; i < shownLines; ++i) {
+        const QTextLine line = textLayout.lineAt(i);
+        if (i == kTileTextLines - 1 && lineCount > kTileTextLines) {
+            const QString rest = opt.text.mid(line.textStart());
+            const QString elided = metrics.elidedText(rest, Qt::ElideRight, textRect.width());
+            const QRect lineRect(textRect.left(), qRound(position.y() + line.y()), textRect.width(), metrics.lineSpacing());
+            painter->drawText(lineRect, Qt::AlignHCenter | Qt::AlignTop, elided);
+        } else {
+            line.draw(painter, position);
+        }
+    }
+
+    // status badges in the top right corner of the card
+    // FIXME: this really has no business of being here. Make generic.
+    auto instance = (BaseInstance*)index.data(InstanceList::InstancePointerRole).value<void*>();
+    if (instance) {
+        QStyleOptionViewItem badgeOption = opt;
+        badgeOption.rect = cardRect.adjusted(4, 4, -4, -4);
+        drawBadges(painter, badgeOption, instance, mode, state);
+    }
+
+    painter->restore();
+}
+
 void ListViewDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
+    if (m_tileMode) {
+        paintTile(painter, option, index);
+        return;
+    }
+
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
     painter->save();
@@ -215,6 +335,13 @@ QSize ListViewDelegate::sizeHint(const QStyleOptionViewItem& option, const QMode
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
+    if (m_tileMode) {
+        // all tiles have the same size, so rows of cards line up nicely
+        const QFontMetrics metrics(opt.font);
+        const int height = 2 * kTileInset + kTilePaddingTop + kTileIconSize + kTileIconTextGap + kTileTextLines * metrics.lineSpacing() +
+                           kTilePaddingBottom;
+        return QSize(kTileCellWidth, height);
+    }
     opt.features |= QStyleOptionViewItem::WrapText;
     opt.text = index.data().toString();
     opt.textElideMode = Qt::ElideRight;
@@ -263,6 +390,10 @@ void ListViewDelegate::updateEditorGeometry(QWidget* editor,
                                             const QStyleOptionViewItem& option,
                                             [[maybe_unused]] const QModelIndex& index) const
 {
+    if (m_tileMode) {
+        editor->setGeometry(tileTextRect(option.rect, option.font));
+        return;
+    }
     const int iconSize = 48;
     QRect textRect = option.rect;
     textRect.adjust(0, iconSize + 5, 0, 0);

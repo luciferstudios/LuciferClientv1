@@ -49,13 +49,14 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actionAddInstance"/>
-   <addaction name="separator"/>
-   <addaction name="actionFoldersButton"/>
+   <addaction name="actionLibraryTab"/>
+   <addaction name="actionNewsTab"/>
+   <addaction name="actionAccountsTab"/>
    <addaction name="actionSettings"/>
+   <addaction name="actionAddInstance"/>
+   <addaction name="actionFoldersButton"/>
    <addaction name="actionHelpButton"/>
    <addaction name="actionCheckUpdate"/>
-   <addaction name="separator"/>
    <addaction name="actionCAT"/>
    <addaction name="actionAccountsButton"/>
   </widget>
@@ -242,6 +243,36 @@
    </property>
    <property name="toolTip">
     <string>Open the development blog to read more news about %1.</string>
+   </property>
+  </action>
+  <action name="actionLibraryTab">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Library</string>
+   </property>
+   <property name="toolTip">
+    <string>Your instances.</string>
+   </property>
+  </action>
+  <action name="actionNewsTab">
+   <property name="text">
+    <string>News</string>
+   </property>
+   <property name="toolTip">
+    <string>Read the latest news about %1.</string>
+   </property>
+  </action>
+  <action name="actionAccountsTab">
+   <property name="text">
+    <string>Accounts</string>
+   </property>
+   <property name="toolTip">
+    <string>Add, remove and switch Minecraft accounts.</string>
    </property>
   </action>
   <action name="actionCAT">

@@ -453,6 +453,43 @@ void InstanceView::setPaintCat(bool visible)
     }
 }
 
+void InstanceView::setItemWidth(int newWidth)
+{
+    if (newWidth <= 0 || newWidth == m_itemWidth) {
+        return;
+    }
+    m_itemWidth = newWidth;
+    if (m_currentItemsPerRow > 0) {
+        // already laid out once; otherwise the first resizeEvent() takes care of this
+        m_currentItemsPerRow = qMax(1, calculateItemsPerRow());
+    }
+    m_currentCursorColumn = -1;
+    updateGeometries();
+}
+
+void InstanceView::setSpacing(int newSpacing)
+{
+    if (newSpacing < 0 || newSpacing == m_spacing) {
+        return;
+    }
+    m_spacing = newSpacing;
+    if (m_currentItemsPerRow > 0) {
+        // already laid out once; otherwise the first resizeEvent() takes care of this
+        m_currentItemsPerRow = qMax(1, calculateItemsPerRow());
+    }
+    m_currentCursorColumn = -1;
+    updateGeometries();
+}
+
+void InstanceView::setCenterItems(bool center)
+{
+    if (center == m_centerItems) {
+        return;
+    }
+    m_centerItems = center;
+    updateGeometries();
+}
+
 void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
 {
     executeDelayedItemsLayout();
@@ -582,6 +619,9 @@ void InstanceView::resizeEvent([[maybe_unused]] QResizeEvent* event)
     if (newItemsPerRow != m_currentItemsPerRow) {
         m_currentCursorColumn = -1;
         m_currentItemsPerRow = newItemsPerRow;
+        updateGeometries();
+    } else if (m_centerItems) {
+        // centered rows depend on the exact viewport width, not only on the number of columns
         updateGeometries();
     } else {
         updateScrollbar();
@@ -720,9 +760,17 @@ QRect InstanceView::geometryRect(const QModelIndex& index) const
     QStyleOptionViewItem option;
     initViewItemOption(&option);
 
+    int left = m_spacing;
+    if (m_centerItems && pos.second >= 0 && pos.second < cat->rows.size()) {
+        const int itemsInRow = static_cast<int>(cat->rows[pos.second].items.size());
+        const int rowWidth = itemsInRow * itemWidth() + qMax(0, itemsInRow - 1) * m_spacing;
+        const int available = viewport()->width() - m_leftMargin - m_rightMargin;
+        left = qMax(m_spacing, m_leftMargin + (available - rowWidth) / 2);
+    }
+
     QRect out;
     out.setTop(cat->verticalPosition() + cat->headerHeight() + 5 + cat->rowTopOf(index));
-    out.setLeft(m_spacing + x * (itemWidth() + m_spacing));
+    out.setLeft(left + x * (itemWidth() + m_spacing));
     out.setSize(itemDelegate()->sizeHint(option, index));
     m_geometryCache.insert(row, new QRect(out));
     return out;

@@ -80,6 +80,13 @@ class InstanceView : public QAbstractItemView {
     int spacing() const { return m_spacing; };
     void setPaintCat(bool visible);
 
+    /// Width of one item cell (must match the width returned by the item delegate's sizeHint).
+    void setItemWidth(int newWidth);
+    /// Horizontal gap between item cells.
+    void setSpacing(int newSpacing);
+    /// When enabled, every visual row is horizontally centered in the viewport instead of left-aligned.
+    void setCenterItems(bool center);
+
    public slots:
     virtual void updateGeometries() override;
 
@@ -128,6 +135,7 @@ class InstanceView : public QAbstractItemView {
     int m_itemWidth = 100;
     int m_currentItemsPerRow = -1;
     int m_currentCursorColumn = -1;
+    bool m_centerItems = false;
     mutable QCache<int, QRect> m_geometryCache;
     CatPainter* m_cat = nullptr;
 

@@ -820,7 +820,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         m_settings->registerSetting("StatusBarVisible", true);
 
-        m_settings->registerSetting("ToolbarsLocked", false);
+        m_settings->registerSetting("ToolbarsLocked", true);
 
         // Instance
         m_settings->registerSetting("InstSortMode", "Name");
@@ -1277,18 +1277,12 @@ bool Application::createSetupWizard()
     bool wizardRequired = javaRequired || languageRequired || pasteInterventionRequired || themeInterventionRequired || askjava || login;
     if (wizardRequired) {
         // set default theme after going into theme wizard
+        // LuciferClient defaults to its own "Obsidian" look with the matching monochrome icons
         if (!validIcons) {
-            settings()->set("IconTheme", QString("pe_colored"));
+            settings()->set("IconTheme", QString("flat_white"));
         }
         if (!validWidgets) {
-#if defined(Q_OS_WIN32) || defined(Q_OS_MACOS)
-            const QString style =
-                QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark ? QStringLiteral("dark") : QStringLiteral("bright");
-#else
-            const QString style = QStringLiteral("system");
-#endif
-
-            settings()->set("ApplicationTheme", style);
+            settings()->set("ApplicationTheme", QStringLiteral("obsidian"));
         }
 
         m_themeManager->applyCurrentlySelectedTheme(true);
