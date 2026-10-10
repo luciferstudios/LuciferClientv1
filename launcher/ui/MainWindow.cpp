@@ -45,8 +45,10 @@
 #include "MainWindow.h"
 #include "ui_MainWindow.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QLocale>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QVariant>
@@ -70,6 +72,7 @@
 #include <QStatusBar>
 #include <QToolBar>
 #include <QToolButton>
+#include <QVBoxLayout>
 #include <QWidget>
 #include <QWidgetAction>
 #include <memory>
@@ -111,8 +114,10 @@
 #include "ui/instanceview/InstanceView.h"
 #include "ui/themes/ITheme.h"
 #include "ui/themes/ThemeManager.h"
+#include "ui/widgets/InstanceHero.h"
 #include "ui/widgets/LabeledToolButton.h"
 
+#include "minecraft/Component.h"
 #include "minecraft/PackProfile.h"
 #include "minecraft/VersionFile.h"
 #include "minecraft/WorldList.h"
@@ -120,6 +125,7 @@
 #include "minecraft/mod/ResourcePackFolderModel.h"
 #include "minecraft/mod/ShaderPackFolderModel.h"
 #include "minecraft/mod/TexturePackFolderModel.h"
+#include "minecraft/mod/tasks/InstallPerformanceModsTask.h"
 #include "minecraft/mod/tasks/LocalResourceParse.h"
 
 #include "modplatform/ModIndex.h"
@@ -204,6 +210,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->actionExportInstance->setMenu(exportInstanceMenu);
     }
 
+    // header: brand, tabs, right aligned quick buttons and the account avatar
+    setupHeader();
+
     // hide, disable and show stuff
     {
         ui->actionReportBug->setVisible(!BuildConfig.BUG_TRACKER_URL.isEmpty());
@@ -238,6 +247,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     // add the toolbar toggles to the view menu
     ui->viewMenu->addAction(ui->instanceToolBar->toggleViewAction());
     ui->viewMenu->addAction(ui->newsToolBar->toggleViewAction());
+
+    // The banner, the action row and the header tabs replace these toolbars by default.
+    // They can still be turned back on from the View menu (and that choice is saved with the window state).
+    ui->instanceToolBar->hide();
+    ui->newsToolBar->hide();
 
     updateThemeMenu();
     updateMainToolBar();
@@ -322,7 +336,28 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         view->setSourceOfGroupCollapseStatus(
             [](const QString& groupName) -> bool { return APPLICATION->instances()->isGroupCollapsed(groupName); });
         connect(view, &InstanceView::groupStateChanged, APPLICATION->instances(), &InstanceList::on_GroupStateChanged);
-        ui->horizontalLayout->addWidget(view);
+
+        // instances are shown as centered cards on the window background
+        delegate->setTileMode(true);
+        view->viewport()->setBackgroundRole(QPalette::Window);
+        view->setItemWidth(delegate->itemWidth());
+        view->setSpacing(12);
+        view->setCenterItems(true);
+
+        // library page: banner on top, the instance cards, and the instance actions below
+        auto libraryPage = new QWidget(ui->centralWidget);
+        libraryPage->setObjectName(QStringLiteral("libraryPage"));
+        auto libraryLayout = new QVBoxLayout(libraryPage);
+        libraryLayout->setContentsMargins(28, 22, 28, 12);
+        libraryLayout->setSpacing(16);
+
+        m_hero = new InstanceHero(ui->actionLaunchInstance, ui->actionKillInstance, libraryPage);
+        libraryLayout->addWidget(m_hero);
+        libraryLayout->addWidget(view, 1);
+        m_instanceActionRow = createInstanceActionRow(libraryPage);
+        libraryLayout->addWidget(m_instanceActionRow);
+
+        ui->horizontalLayout->addWidget(libraryPage);
     }
     // The cat background
     {
@@ -371,10 +406,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     statusBar()->addPermanentWidget(m_statusLeft, 1);
     statusBar()->addPermanentWidget(m_statusCenter, 0);
 
-    // Add "manage accounts" button, right align
+    // Right align the quick buttons and the account avatar
     QWidget* spacer = new QWidget();
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    ui->mainToolBar->insertWidget(ui->actionAccountsButton, spacer);
+    ui->mainToolBar->insertWidget(ui->actionAddInstance, spacer);
 
     // Use undocumented property... https://stackoverflow.com/questions/7121718/create-a-scrollbar-in-a-submenu-qt
     ui->accountsMenu->setStyleSheet("QMenu { menu-scrollable: 1; }");
@@ -458,6 +493,10 @@ void MainWindow::retranslateUi()
     // replace the %1 with the launcher display name in some actions
     if (helpMenuButton->toolTip().contains("%1"))
         helpMenuButton->setToolTip(helpMenuButton->toolTip().arg(BuildConfig.LAUNCHER_DISPLAYNAME));
+    if (ui->actionNewsTab->toolTip().contains("%1"))
+        ui->actionNewsTab->setToolTip(ui->actionNewsTab->toolTip().arg(BuildConfig.LAUNCHER_DISPLAYNAME));
+
+    updateHero();
 
     for (auto action : ui->helpMenu->actions()) {
         if (action->text().contains("%1"))
@@ -958,8 +997,9 @@ void MainWindow::processURLs(QList<QUrl> urls)
                 } else {
                     CustomMessageBox::selectable(
                         this, tr("Error"),
-                        tr("Unsupported Modrinth link.\n\nPrism Launcher currently only supports modpack links such as "
-                           "modrinth://modpack/fabulously-optimized."),
+                        tr("Unsupported Modrinth link.\n\n%1 currently only supports modpack links such as "
+                           "modrinth://modpack/fabulously-optimized.")
+                            .arg(BuildConfig.LAUNCHER_DISPLAYNAME),
                         QMessageBox::Critical)
                         ->show();
                 }
@@ -1045,7 +1085,7 @@ void MainWindow::processURLs(QList<QUrl> urls)
                 emit APPLICATION->oauthReplyRecieved(receivedData);
                 continue;
             } else if ((url.scheme() == "prismlauncher" || url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME) && isExternalURLImport) {
-                // PrismLauncher URL protocol modpack import
+                // Launcher URL protocol modpack import (the legacy prismlauncher:// scheme is still accepted)
                 // works for any prism fork
                 // preferred import format: prismlauncher://import?url=ENCODED
                 const auto host = url.host().toLower();
@@ -1401,6 +1441,73 @@ void MainWindow::globalSettingsClosed()
     update();
 }
 
+void MainWindow::on_actionBoostFps_triggered()
+{
+    if (!m_selectedInstance) {
+        return;
+    }
+    const auto title = tr("Boost FPS");
+    if (m_selectedInstance->isRunning()) {
+        CustomMessageBox::selectable(this, title, tr("Close the game before installing performance mods."), QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    auto* profile = m_selectedInstance->getPackProfile();
+    if (profile != nullptr && profile->getComponentVersion("net.minecraft").isEmpty()) {
+        if (auto res = profile->reload(Net::Mode::Offline); !res) {
+            qWarning() << "Failed to reload components:" << res.error();
+        }
+    }
+    if (profile == nullptr || !profile->getModLoaders().has_value()) {
+        auto response =
+            CustomMessageBox::selectable(this, title,
+                                         tr("Performance mods like Sodium need a mod loader, but \"%1\" doesn't have one.\n\n"
+                                            "Add Fabric (recommended) or NeoForge on the instance's Version page, then use Boost FPS "
+                                            "again.\n\nOpen the Version page now?")
+                                             .arg(m_selectedInstance->name()),
+                                         QMessageBox::Question, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+                ->exec();
+        if (response == QMessageBox::Yes && m_selectedInstance->canEdit()) {
+            APPLICATION->showInstanceWindow(m_selectedInstance, "version");
+        }
+        return;
+    }
+
+    auto task = makeShared<InstallPerformanceModsTask>(m_selectedInstance);
+    connect(task.get(), &Task::failed, this,
+            [this, title](const QString& reason) { CustomMessageBox::selectable(this, title, reason, QMessageBox::Warning)->show(); });
+    ProgressDialog progress(this);
+    progress.execWithTask(task.get());
+    if (!task->wasSuccessful()) {
+        return;
+    }
+
+    const auto bulletList = [](const QStringList& items) {
+        QString list;
+        for (const auto& item : items) {
+            list += QStringLiteral("  \u2022 ") + item + '\n';
+        }
+        return list;
+    };
+    QString summary;
+    if (!task->installedMods().isEmpty()) {
+        summary += tr("Installed:") + '\n' + bulletList(task->installedMods()) + '\n';
+    }
+    if (!task->skippedMods().isEmpty()) {
+        summary += tr("Already installed or replaced by another mod:") + '\n' + bulletList(task->skippedMods()) + '\n';
+    }
+    if (!task->unavailableMods().isEmpty()) {
+        summary += tr("Not available for this version:") + '\n' + bulletList(task->unavailableMods()) + '\n';
+    }
+    if (task->installedMods().isEmpty() && task->unavailableMods().isEmpty()) {
+        summary += tr("This instance already has all the performance mods we'd recommend.");
+    } else if (!task->installedMods().isEmpty()) {
+        summary += tr("The mods are active the next time you launch the instance.");
+    }
+    CustomMessageBox::selectable(this, title, summary.trimmed(), QMessageBox::Information)->show();
+}
+
 void MainWindow::on_actionEditInstance_triggered()
 {
     if (!m_selectedInstance)
@@ -1700,6 +1807,7 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
         updateInstanceToolIcon(m_selectedInstance->iconKey());
 
         updateLaunchButton();
+        updateHero();
 
         APPLICATION->settings()->set("SelectedInstance", m_selectedInstance->id());
 
@@ -1736,6 +1844,7 @@ void MainWindow::selectionBad()
     ui->instanceToolBar->setEnabled(false);
     setInstanceActionsEnabled(false);
     updateLaunchButton();
+    updateHero();
     renameButton->setText(tr("Rename Instance"));
     updateInstanceToolIcon("grass");
 
@@ -1791,6 +1900,7 @@ void MainWindow::updateStatusCenter()
 void MainWindow::setInstanceActionsEnabled(bool enabled)
 {
     ui->actionEditInstance->setEnabled(enabled);
+    ui->actionBoostFps->setEnabled(enabled);
     ui->actionChangeInstGroup->setEnabled(enabled);
     ui->actionViewSelectedInstFolder->setEnabled(enabled);
     ui->actionExportInstance->setEnabled(enabled);
@@ -1803,4 +1913,163 @@ void MainWindow::refreshCurrentInstance()
 {
     auto current = view->selectionModel()->currentIndex();
     instanceChanged(current, current);
+}
+
+void MainWindow::setupHeader()
+{
+    // Brand mark on the left, e.g. "LUCIFER" in bold followed by "CLIENT" in a light weight
+    auto brandLabel = new QLabel(this);
+    brandLabel->setObjectName(QStringLiteral("brandLabel"));
+    brandLabel->setTextFormat(Qt::RichText);
+    const QString brand = BuildConfig.LAUNCHER_DISPLAYNAME.toUpper().toHtmlEscaped();
+    const QString suffix = QStringLiteral("CLIENT");
+    if (brand.endsWith(suffix) && brand.size() > suffix.size()) {
+        brandLabel->setText(QStringLiteral("<span style=\"font-weight:800;\">%1</span><span style=\"font-weight:300;\">%2</span>")
+                                .arg(brand.left(brand.size() - suffix.size()), suffix));
+    } else {
+        brandLabel->setText(QStringLiteral("<span style=\"font-weight:800;\">%1</span>").arg(brand));
+    }
+    QFont brandFont = brandLabel->font();
+    brandFont.setPixelSize(20);
+    brandFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+    brandLabel->setFont(brandFont);
+    brandLabel->setContentsMargins(6, 0, 18, 0);
+    ui->mainToolBar->insertWidget(ui->actionLibraryTab, brandLabel);
+
+    // Tabs. The launcher has a single page, so "Library" is always the active tab and the other tabs open their windows.
+    connect(ui->actionLibraryTab, &QAction::triggered, this, [this] {
+        ui->actionLibraryTab->setChecked(true);
+        if (view) {
+            view->setFocus();
+        }
+    });
+    connect(ui->actionNewsTab, &QAction::triggered, this, &MainWindow::on_actionMoreNews_triggered);
+    connect(ui->actionAccountsTab, &QAction::triggered, this, &MainWindow::on_actionManageAccounts_triggered);
+
+    ui->mainToolBar->setIconSize(QSize(20, 20));
+    applyHeaderButtonStyles();
+    // keep the per button styles if the tool bar ever pushes new defaults to its buttons
+    connect(ui->mainToolBar, &QToolBar::iconSizeChanged, this, &MainWindow::applyHeaderButtonStyles);
+    connect(ui->mainToolBar, &QToolBar::toolButtonStyleChanged, this, &MainWindow::applyHeaderButtonStyles);
+}
+
+void MainWindow::applyHeaderButtonStyles()
+{
+    for (auto action : { ui->actionLibraryTab, ui->actionNewsTab, ui->actionAccountsTab, ui->actionSettings }) {
+        if (auto button = qobject_cast<QToolButton*>(ui->mainToolBar->widgetForAction(action))) {
+            button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            button->setProperty("headerTab", true);
+            button->setFocusPolicy(Qt::NoFocus);
+        }
+    }
+    for (auto action : { ui->actionAddInstance, ui->actionFoldersButton, ui->actionHelpButton, ui->actionCheckUpdate, ui->actionCAT,
+                         ui->actionAccountsButton }) {
+        if (auto button = qobject_cast<QToolButton*>(ui->mainToolBar->widgetForAction(action))) {
+            button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        }
+    }
+    // the account avatar is a bit larger than the other buttons
+    if (auto avatarButton = qobject_cast<QToolButton*>(ui->mainToolBar->widgetForAction(ui->actionAccountsButton))) {
+        avatarButton->setIconSize(QSize(30, 30));
+    }
+}
+
+QWidget* MainWindow::createInstanceActionRow(QWidget* parent)
+{
+    auto row = new QWidget(parent);
+    row->setObjectName(QStringLiteral("instanceActionRow"));
+    auto rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(6);
+    rowLayout->addStretch(1);
+    for (auto action : { ui->actionEditInstance, ui->actionBoostFps, ui->actionViewSelectedInstFolder, ui->actionExportInstance,
+                         ui->actionCopyInstance, ui->actionDeleteInstance }) {
+        auto button = new QToolButton(row);
+        button->setDefaultAction(action);
+        button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        button->setIconSize(QSize(20, 20));
+        button->setAutoRaise(true);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setMinimumWidth(64);
+        if (action->menu()) {
+            button->setPopupMode(QToolButton::InstantPopup);
+        }
+        rowLayout->addWidget(button);
+    }
+    rowLayout->addStretch(1);
+    return row;
+}
+
+void MainWindow::updateHero()
+{
+    if (!m_hero) {
+        return;
+    }
+    if (!m_selectedInstance) {
+        m_hero->clearInstance();
+        return;
+    }
+    m_hero->setInstanceInfo(m_selectedInstance->name(), instanceSummary(m_selectedInstance));
+}
+
+QString MainWindow::instanceSummary(MinecraftInstance* instance) const
+{
+    struct KnownLoader {
+        const char* uid;
+        const char* name;
+    };
+    // checked in this order, the first enabled one wins
+    static constexpr KnownLoader knownLoaders[] = { { "net.neoforged", "NeoForge" },
+                                                    { "net.minecraftforge", "Forge" },
+                                                    { "org.quiltmc.quilt-loader", "Quilt" },
+                                                    { "net.fabricmc.fabric-loader", "Fabric" },
+                                                    { "com.mumfrey.liteloader", "LiteLoader" } };
+
+    QString loader = tr("Vanilla");
+    QString minecraftVersion;
+    if (auto profile = instance->getPackProfile()) {
+        for (const auto& known : knownLoaders) {
+            auto component = profile->getComponent(QString::fromLatin1(known.uid));
+            if (component && component->isEnabled()) {
+                loader = QString::fromLatin1(known.name);
+                break;
+            }
+        }
+        minecraftVersion = profile->getComponentVersion(QStringLiteral("net.minecraft"));
+    }
+
+    QStringList parts;
+    parts.append(minecraftVersion.isEmpty() ? loader : QStringLiteral("%1 %2").arg(loader, minecraftVersion));
+
+    if (instance->settings()->get("ShowGameTime").toBool()) {
+        const qint64 lastLaunch = instance->lastLaunch();
+        if (lastLaunch > 0) {
+            parts.append(tr("Last played %1").arg(timeAgo(lastLaunch)));
+        } else {
+            parts.append(tr("Never played"));
+        }
+    }
+    return parts.join(QStringLiteral("  \u2022  "));
+}
+
+QString MainWindow::timeAgo(qint64 msecsSinceEpoch) const
+{
+    const QDateTime then = QDateTime::fromMSecsSinceEpoch(msecsSinceEpoch);
+    const qint64 seconds = then.secsTo(QDateTime::currentDateTime());
+    if (seconds < 60) {
+        return tr("just now");
+    }
+    const qint64 minutes = seconds / 60;
+    if (minutes < 60) {
+        return minutes == 1 ? tr("1 minute ago") : tr("%1 minutes ago").arg(minutes);
+    }
+    const qint64 hours = minutes / 60;
+    if (hours < 24) {
+        return hours == 1 ? tr("1 hour ago") : tr("%1 hours ago").arg(hours);
+    }
+    const qint64 days = hours / 24;
+    if (days < 30) {
+        return days == 1 ? tr("yesterday") : tr("%1 days ago").arg(days);
+    }
+    return tr("on %1").arg(QLocale().toString(then.date(), QLocale::ShortFormat));
 }

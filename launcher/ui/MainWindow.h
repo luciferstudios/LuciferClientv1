@@ -58,6 +58,7 @@ class MinecraftInstance;
 class MinecraftLauncher;
 class BaseProfilerFactory;
 class InstanceView;
+class InstanceHero;
 class KonamiCode;
 class InstanceTask;
 class LabeledToolButton;
@@ -167,6 +168,8 @@ class MainWindow : public QMainWindow {
 
     void on_actionEditInstance_triggered();
 
+    void on_actionBoostFps_triggered();
+
     void on_actionCreateInstanceShortcut_triggered();
 
     void taskEnd();
@@ -229,6 +232,14 @@ class MainWindow : public QMainWindow {
     void updateStatusCenter();
     void setInstanceActionsEnabled(bool enabled);
 
+    // Obsidian layout
+    void setupHeader();
+    void applyHeaderButtonStyles();
+    QWidget* createInstanceActionRow(QWidget* parent);
+    void updateHero();
+    QString instanceSummary(MinecraftInstance* instance) const;
+    QString timeAgo(qint64 msecsSinceEpoch) const;
+
     void runModalTask(Task* task);
     void instanceFromInstanceTask(InstanceTask* task);
 
@@ -244,6 +255,8 @@ class MainWindow : public QMainWindow {
     LabeledToolButton* renameButton = nullptr;
     QToolButton* helpMenuButton = nullptr;
     KonamiCode* secretEventFilter = nullptr;
+    InstanceHero* m_hero = nullptr;
+    QWidget* m_instanceActionRow = nullptr;
 
     unique_qobject_ptr<NewsChecker> m_newsChecker;
 

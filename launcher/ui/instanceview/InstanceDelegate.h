@@ -25,6 +25,13 @@ class ListViewDelegate : public QStyledItemDelegate {
     explicit ListViewDelegate(QObject* parent = 0);
     virtual ~ListViewDelegate() {}
 
+    /// Tile mode paints every instance as a rounded card (icon above a centered, at most two line label).
+    /// When disabled, the classic MultiMC style (icon over a highlighted label) is used.
+    void setTileMode(bool enabled) { m_tileMode = enabled; }
+    bool tileMode() const { return m_tileMode; }
+    /// Width of one item cell, to be passed to InstanceView::setItemWidth().
+    int itemWidth() const;
+
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     void updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
@@ -38,4 +45,10 @@ class ListViewDelegate : public QStyledItemDelegate {
 
    private slots:
     void editingDone();
+
+   private:
+    void paintTile(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const;
+    QRect tileTextRect(const QRect& cell, const QFont& font) const;
+
+    bool m_tileMode = false;
 };

@@ -456,7 +456,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     m_dataPath = dataPath;
 
     /*
-     * Establish the mechanism for communication with an already running PrismLauncher that uses the same data path.
+     * Establish the mechanism for communication with an already running launcher instance that uses the same data path.
      * If there is one, tell it what the user actually wanted to do and exit.
      * We want to initialize this before logging to avoid messing with the log of a potential already running copy.
      */
@@ -782,10 +782,23 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("CustomSDLPath", "");
 
         // Performance related options
-        m_settings->registerSetting("EnableFeralGamemode", false);
+        // GameMode is only ever used when it's actually available (see Application::SupportsGameMode), so it's safe to default on.
+        m_settings->registerSetting("EnableFeralGamemode", true);
         m_settings->registerSetting("EnableMangoHud", false);
+#ifdef Q_OS_WIN
+        // On Windows this only sets the per-app "High performance" GPU preference for the Java runtime (see ApplyPerformanceTweaks),
+        // which is a no-op on single GPU systems. On Linux it forces PRIME/NVIDIA environment variables, so keep it opt-in there.
+        m_settings->registerSetting("UseDiscreteGpu", true);
+#else
         m_settings->registerSetting("UseDiscreteGpu", false);
+#endif
         m_settings->registerSetting("UseZink", false);
+        // Low-latency G1 garbage collector tuning (fewer GC stutters / frame drops). User JVM arguments always take precedence.
+        m_settings->registerSetting("UseOptimizedJvmArgs", true);
+        // On the first launch of an instance (no options.txt yet), start the game with VSync off and an unlimited frame rate.
+        m_settings->registerSetting("OptimizeGameOptions", true);
+        // Run the game process with an "above normal" scheduling priority (Windows only).
+        m_settings->registerSetting("RaiseGamePriority", true);
 
         // Game time
         m_settings->registerSetting("ShowGameTime", true);
@@ -820,7 +833,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         m_settings->registerSetting("StatusBarVisible", true);
 
-        m_settings->registerSetting("ToolbarsLocked", false);
+        m_settings->registerSetting("ToolbarsLocked", true);
 
         // Instance
         m_settings->registerSetting("InstSortMode", "Name");
@@ -1104,7 +1117,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                               "\n"
                               "This likely means that a update attempt failed. Please ensure your installation is in working order before "
                               "proceeding.\n"
-                              "Check the Prism Launcher updater log at: \n"
+                              "Check the updater log at: \n"
                               "%7\n"
                               "for details on the last update attempt.\n"
                               "\n"
@@ -1144,7 +1157,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                               "\n"
                               "Please ensure your installation is in working order before "
                               "proceeding.\n"
-                              "Check the Prism Launcher updater log at: \n"
+                              "Check the updater log at: \n"
                               "%1\n"
                               "for details on the last update attempt.")
                                .arg(updateLogPath);
@@ -1179,7 +1192,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             auto infoMsg = tr("Update succeeded\n"
                               "\n"
                               "You are now running %1 .\n"
-                              "Check the Prism Launcher updater log at: \n"
+                              "Check the updater log at: \n"
                               "%2\n"
                               "for details.")
                                .arg(BuildConfig.printableVersionString())
@@ -1277,18 +1290,12 @@ bool Application::createSetupWizard()
     bool wizardRequired = javaRequired || languageRequired || pasteInterventionRequired || themeInterventionRequired || askjava || login;
     if (wizardRequired) {
         // set default theme after going into theme wizard
+        // LuciferClient defaults to its own "Obsidian" look with the matching monochrome icons
         if (!validIcons) {
-            settings()->set("IconTheme", QString("pe_colored"));
+            settings()->set("IconTheme", QString("flat_white"));
         }
         if (!validWidgets) {
-#if defined(Q_OS_WIN32) || defined(Q_OS_MACOS)
-            const QString style =
-                QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark ? QStringLiteral("dark") : QStringLiteral("bright");
-#else
-            const QString style = QStringLiteral("system");
-#endif
-
-            settings()->set("ApplicationTheme", style);
+            settings()->set("ApplicationTheme", QStringLiteral("obsidian"));
         }
 
         m_themeManager->applyCurrentlySelectedTheme(true);

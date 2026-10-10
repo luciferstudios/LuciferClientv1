@@ -43,6 +43,10 @@
 #include "launch/LaunchTask.h"
 #include "minecraft/MinecraftInstance.h"
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 #if defined(Q_OS_LINUX) && defined(ENABLE_GAMEMODE)
 #include "gamemode_client.h"
 #endif
@@ -129,6 +133,16 @@ void LauncherPartLaunch::executeTask()
     args << "org.prismlauncher.EntryPoint";
 
     qDebug() << args.join(' ');
+
+#ifdef Q_OS_WIN
+    if (instance->settings()->get("RaiseGamePriority").toBool()) {
+        // Let the game win CPU time over background programs (browsers, chat apps, updaters...).
+        // "Above normal" rather than "high", so that input, audio and the rest of the system are never starved.
+        m_process.setCreateProcessArgumentsModifier(
+            [](QProcess::CreateProcessArguments* processArgs) { processArgs->flags |= ABOVE_NORMAL_PRIORITY_CLASS; });
+        emit logLine("Game process priority: above normal\n", MessageLevel::Launcher);
+    }
+#endif
 
     QString wrapperCommandStr = instance->getWrapperCommand().trimmed();
     if (!wrapperCommandStr.isEmpty()) {

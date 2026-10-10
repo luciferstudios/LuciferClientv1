@@ -56,6 +56,7 @@
 #include "launch/steps/TextPrint.h"
 
 #include "minecraft/auth/AccountList.h"
+#include "minecraft/launch/ApplyPerformanceTweaks.h"
 #include "minecraft/launch/AutoInstallJava.h"
 #include "minecraft/launch/ClaimAccount.h"
 #include "minecraft/launch/CreateGameFolders.h"
@@ -91,8 +92,11 @@
 
 #include "tools/BaseProfiler.h"
 
+#include <algorithm>
+
 #include <QActionGroup>
 #include <QMainWindow>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QStandardPaths>
 #include <QWindow>
@@ -232,6 +236,9 @@ void MinecraftInstance::loadSpecificSettings()
         m_settings->registerOverride(global_settings->getSetting("EnableMangoHud"), performanceOverride);
         m_settings->registerOverride(global_settings->getSetting("UseDiscreteGpu"), performanceOverride);
         m_settings->registerOverride(global_settings->getSetting("UseZink"), performanceOverride);
+        m_settings->registerOverride(global_settings->getSetting("UseOptimizedJvmArgs"), performanceOverride);
+        m_settings->registerOverride(global_settings->getSetting("OptimizeGameOptions"), performanceOverride);
+        m_settings->registerOverride(global_settings->getSetting("RaiseGamePriority"), performanceOverride);
 
         // Miscellaneous
         auto miscellaneousOverride = m_settings->registerSetting("OverrideMiscellaneous", false);
@@ -597,14 +604,89 @@ QStringList MinecraftInstance::extraArguments()
     return list;
 }
 
+namespace {
+// Low-latency JVM tuning for the Minecraft client.
+// Based on the arguments the official Minecraft launcher ships for the client (G1 with a short pause target), plus a few flags
+// that remove common sources of frame time spikes. These are returned so that they can be placed *before* any user/modpack
+// arguments: HotSpot uses the last occurrence of an option, so explicit user choices always win.
+QStringList optimizedJvmArguments(const QStringList& userArgs, const JavaVersion& javaVersion, const QString& javaVendor, int maxMemMiB)
+{
+    // These are HotSpot options. OpenJ9 (IBM Semeru etc.) uses a different set (-Xgcpolicy...) and has its own tuning.
+    const auto isOpenJ9 = [](const QString& str) {
+        return str.contains("OpenJ9", Qt::CaseInsensitive) || str.contains("IBM", Qt::CaseInsensitive);
+    };
+    if (isOpenJ9(javaVendor) || isOpenJ9(javaVersion.toString())) {
+        return {};
+    }
+    // Legacy runtimes (Java 7 and older): leave them alone. An unknown version (0) is still most likely a modern HotSpot JVM.
+    if (javaVersion.major() > 0 && javaVersion.major() < 8) {
+        return {};
+    }
+
+    static const QRegularExpression s_collectorRegex(
+        QStringLiteral("^-XX:\\+Use(Serial|Parallel|ParallelOld|ConcMarkSweep|G1|Z|Shenandoah|Epsilon)GC$"));
+    bool userPickedOtherCollector = false;
+    bool experimentalLocked = false;
+    for (const auto& arg : userArgs) {
+        if (arg.startsWith("-Xgcpolicy") || arg.startsWith("-Xshareclasses")) {
+            return {};  // OpenJ9 options in the user arguments
+        }
+        if (auto match = s_collectorRegex.match(arg); match.hasMatch() && match.captured(1) != "G1") {
+            // Selecting two collectors is a fatal JVM error, so never add ours next to the user's choice.
+            userPickedOtherCollector = true;
+        }
+        if (arg == "-XX:-UnlockExperimentalVMOptions") {
+            experimentalLocked = true;
+        }
+    }
+
+    QStringList args;
+    if (!userPickedOtherCollector) {
+        // G1 with a young generation sized for Minecraft's very high allocation rate and a 50ms pause target.
+        // This is what the official launcher uses for the client. ZGC/Shenandoah cost noticeable FPS on the client.
+        if (!experimentalLocked) {
+            args << "-XX:+UnlockExperimentalVMOptions";
+        }
+        args << "-XX:+UseG1GC";
+        if (!experimentalLocked) {
+            args << "-XX:G1NewSizePercent=20";
+        }
+        args << "-XX:G1ReservePercent=20";
+        args << "-XX:MaxGCPauseMillis=50";
+        if (maxMemMiB >= 2048) {
+            // Big regions mean fewer "humongous" allocations for chunk/render buffers. Too coarse for tiny heaps.
+            args << "-XX:G1HeapRegionSize=32M";
+        }
+        args << "-XX:+ParallelRefProcEnabled";
+    }
+    // Mods calling System.gc() cause full, multi-hundred-millisecond collections, i.e. massive stutters.
+    args << "-XX:+DisableExplicitGC";
+    // Don't write JVM performance counters to a memory mapped file in the temp folder. This can block threads (and therefore
+    // frames) on slow or busy disks. Side effect: tools like jps/jstat won't list the game process.
+    args << "-XX:+PerfDisableSharedMem";
+    return args;
+}
+}  // namespace
+
 QStringList MinecraftInstance::javaArguments()
 {
     QStringList args;
 
     args << "-Duser.language=en";
 
+    const QStringList customArgs = extraArguments();
+
+    int min = settings()->get("MinMemAlloc").toInt();
+    int max = settings()->get("MaxMemAlloc").toInt();
+    JavaVersion javaVersion = getJavaVersion();
+
+    // performance tuning goes before the custom args, so that anything set by the user or the modpack takes precedence
+    if (settings()->get("UseOptimizedJvmArgs").toBool()) {
+        args.append(optimizedJvmArguments(customArgs, javaVersion, settings()->get("JavaVendor").toString(), std::max(min, max)));
+    }
+
     // custom args go first. we want to override them if we have our own here.
-    args.append(extraArguments());
+    args.append(customArgs);
 
     // OSX dock icon and name
 #ifdef Q_OS_MAC
@@ -637,8 +719,6 @@ QStringList MinecraftInstance::javaArguments()
     }
 #endif
 
-    int min = settings()->get("MinMemAlloc").toInt();
-    int max = settings()->get("MaxMemAlloc").toInt();
     if (min < max) {
         args << QString("-Xms%1m").arg(min);
         args << QString("-Xmx%1m").arg(max);
@@ -648,7 +728,6 @@ QStringList MinecraftInstance::javaArguments()
     }
 
     // No PermGen in newer java.
-    JavaVersion javaVersion = getJavaVersion();
     if (javaVersion.requiresPermGen()) {
         auto permgen = settings()->get("PermGen").toInt();
         if (permgen != 64) {
@@ -1210,6 +1289,11 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
         process->appendStep(makeShared<CheckJava>(pptr));
         // verify that minimum Java requirements are met
         process->appendStep(makeShared<VerifyJavaInstall>(pptr));
+    }
+
+    // FPS tweaks that need to happen before the game starts (fresh options.txt, GPU preference)
+    {
+        process->appendStep(makeShared<ApplyPerformanceTweaks>(pptr));
     }
 
     // run pre-launch command if that's needed

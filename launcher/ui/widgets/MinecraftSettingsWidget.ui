@@ -827,6 +827,36 @@ It is most likely you will need to change the path - please refer to the mod's w
              </property>
              <layout class="QVBoxLayout" name="verticalLayout_13">
               <item>
+               <widget class="QCheckBox" name="useOptimizedJvmArgsCheck">
+                <property name="toolTip">
+                 <string>Tune the garbage collector for smooth frame times (G1 with a short pause target, no explicit GCs). Your own JVM arguments always take precedence.</string>
+                </property>
+                <property name="text">
+                 <string>Use optimized Java arguments (fewer stutters)</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QCheckBox" name="optimizeGameOptionsCheck">
+                <property name="toolTip">
+                 <string>When an instance is launched for the first time (it has no options.txt yet), turn off VSync and set the frame rate limit to Unlimited. Existing game settings are never changed.</string>
+                </property>
+                <property name="text">
+                 <string>Start new instances with VSync off and unlimited FPS</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QCheckBox" name="raiseGamePriorityCheck">
+                <property name="toolTip">
+                 <string>Start Minecraft with an &quot;above normal&quot; process priority, so background programs get less CPU time while you play.</string>
+                </property>
+                <property name="text">
+                 <string>Run the game with higher CPU priority</string>
+                </property>
+               </widget>
+              </item>
+              <item>
                <widget class="QCheckBox" name="enableFeralGamemodeCheck">
                 <property name="toolTip">
                  <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable Feral Interactive's GameMode, to potentially improve gaming performance.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
@@ -849,7 +879,7 @@ It is most likely you will need to change the path - please refer to the mod's w
               <item>
                <widget class="QCheckBox" name="useDiscreteGpuCheck">
                 <property name="toolTip">
-                 <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use the discrete GPU instead of the primary GPU.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                 <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use the discrete (high performance) GPU instead of the primary GPU.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
                 </property>
                 <property name="text">
                  <string>Use discrete GPU</string>

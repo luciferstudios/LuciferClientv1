@@ -249,6 +249,8 @@ set(MINECRAFT_SOURCES
 
     minecraft/launch/ClaimAccount.cpp
     minecraft/launch/ClaimAccount.h
+    minecraft/launch/ApplyPerformanceTweaks.cpp
+    minecraft/launch/ApplyPerformanceTweaks.h
     minecraft/launch/CreateGameFolders.cpp
     minecraft/launch/CreateGameFolders.h
     minecraft/launch/EnsureAvailableMemory.cpp
@@ -360,6 +362,8 @@ set(MINECRAFT_SOURCES
     minecraft/mod/tasks/LocalResourceParse.h
     minecraft/mod/tasks/LocalResourceParse.cpp
     minecraft/mod/tasks/GetModDependenciesTask.h
+    minecraft/mod/tasks/InstallPerformanceModsTask.h
+    minecraft/mod/tasks/InstallPerformanceModsTask.cpp
     minecraft/mod/tasks/GetModDependenciesTask.cpp
 
     # Assets
@@ -852,6 +856,8 @@ SET(LAUNCHER_SOURCES
     # GUI - themes
     ui/themes/FusionTheme.cpp
     ui/themes/FusionTheme.h
+    ui/themes/ObsidianTheme.cpp
+    ui/themes/ObsidianTheme.h
     ui/themes/BrightTheme.cpp
     ui/themes/BrightTheme.h
     ui/themes/CustomTheme.cpp
@@ -1113,6 +1119,8 @@ SET(LAUNCHER_SOURCES
     ui/widgets/IconLabel.h
     ui/widgets/JavaWizardWidget.cpp
     ui/widgets/JavaWizardWidget.h
+    ui/widgets/InstanceHero.cpp
+    ui/widgets/InstanceHero.h
     ui/widgets/LabeledToolButton.cpp
     ui/widgets/LabeledToolButton.h
     ui/widgets/LanguageSelectionWidget.cpp
