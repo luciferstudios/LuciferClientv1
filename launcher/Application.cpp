@@ -782,10 +782,23 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("CustomSDLPath", "");
 
         // Performance related options
-        m_settings->registerSetting("EnableFeralGamemode", false);
+        // GameMode is only ever used when it's actually available (see Application::SupportsGameMode), so it's safe to default on.
+        m_settings->registerSetting("EnableFeralGamemode", true);
         m_settings->registerSetting("EnableMangoHud", false);
+#ifdef Q_OS_WIN
+        // On Windows this only sets the per-app "High performance" GPU preference for the Java runtime (see ApplyPerformanceTweaks),
+        // which is a no-op on single GPU systems. On Linux it forces PRIME/NVIDIA environment variables, so keep it opt-in there.
+        m_settings->registerSetting("UseDiscreteGpu", true);
+#else
         m_settings->registerSetting("UseDiscreteGpu", false);
+#endif
         m_settings->registerSetting("UseZink", false);
+        // Low-latency G1 garbage collector tuning (fewer GC stutters / frame drops). User JVM arguments always take precedence.
+        m_settings->registerSetting("UseOptimizedJvmArgs", true);
+        // On the first launch of an instance (no options.txt yet), start the game with VSync off and an unlimited frame rate.
+        m_settings->registerSetting("OptimizeGameOptions", true);
+        // Run the game process with an "above normal" scheduling priority (Windows only).
+        m_settings->registerSetting("RaiseGamePriority", true);
 
         // Game time
         m_settings->registerSetting("ShowGameTime", true);

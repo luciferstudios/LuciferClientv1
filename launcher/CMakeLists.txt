@@ -249,6 +249,8 @@ set(MINECRAFT_SOURCES
 
     minecraft/launch/ClaimAccount.cpp
     minecraft/launch/ClaimAccount.h
+    minecraft/launch/ApplyPerformanceTweaks.cpp
+    minecraft/launch/ApplyPerformanceTweaks.h
     minecraft/launch/CreateGameFolders.cpp
     minecraft/launch/CreateGameFolders.h
     minecraft/launch/EnsureAvailableMemory.cpp
@@ -360,6 +362,8 @@ set(MINECRAFT_SOURCES
     minecraft/mod/tasks/LocalResourceParse.h
     minecraft/mod/tasks/LocalResourceParse.cpp
     minecraft/mod/tasks/GetModDependenciesTask.h
+    minecraft/mod/tasks/InstallPerformanceModsTask.h
+    minecraft/mod/tasks/InstallPerformanceModsTask.cpp
     minecraft/mod/tasks/GetModDependenciesTask.cpp
 
     # Assets

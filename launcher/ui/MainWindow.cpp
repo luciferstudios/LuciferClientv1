@@ -125,6 +125,7 @@
 #include "minecraft/mod/ResourcePackFolderModel.h"
 #include "minecraft/mod/ShaderPackFolderModel.h"
 #include "minecraft/mod/TexturePackFolderModel.h"
+#include "minecraft/mod/tasks/InstallPerformanceModsTask.h"
 #include "minecraft/mod/tasks/LocalResourceParse.h"
 
 #include "modplatform/ModIndex.h"
@@ -1440,6 +1441,73 @@ void MainWindow::globalSettingsClosed()
     update();
 }
 
+void MainWindow::on_actionBoostFps_triggered()
+{
+    if (!m_selectedInstance) {
+        return;
+    }
+    const auto title = tr("Boost FPS");
+    if (m_selectedInstance->isRunning()) {
+        CustomMessageBox::selectable(this, title, tr("Close the game before installing performance mods."), QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    auto* profile = m_selectedInstance->getPackProfile();
+    if (profile != nullptr && profile->getComponentVersion("net.minecraft").isEmpty()) {
+        if (auto res = profile->reload(Net::Mode::Offline); !res) {
+            qWarning() << "Failed to reload components:" << res.error();
+        }
+    }
+    if (profile == nullptr || !profile->getModLoaders().has_value()) {
+        auto response =
+            CustomMessageBox::selectable(this, title,
+                                         tr("Performance mods like Sodium need a mod loader, but \"%1\" doesn't have one.\n\n"
+                                            "Add Fabric (recommended) or NeoForge on the instance's Version page, then use Boost FPS "
+                                            "again.\n\nOpen the Version page now?")
+                                             .arg(m_selectedInstance->name()),
+                                         QMessageBox::Question, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+                ->exec();
+        if (response == QMessageBox::Yes && m_selectedInstance->canEdit()) {
+            APPLICATION->showInstanceWindow(m_selectedInstance, "version");
+        }
+        return;
+    }
+
+    auto task = makeShared<InstallPerformanceModsTask>(m_selectedInstance);
+    connect(task.get(), &Task::failed, this,
+            [this, title](const QString& reason) { CustomMessageBox::selectable(this, title, reason, QMessageBox::Warning)->show(); });
+    ProgressDialog progress(this);
+    progress.execWithTask(task.get());
+    if (!task->wasSuccessful()) {
+        return;
+    }
+
+    const auto bulletList = [](const QStringList& items) {
+        QString list;
+        for (const auto& item : items) {
+            list += QStringLiteral("  \u2022 ") + item + '\n';
+        }
+        return list;
+    };
+    QString summary;
+    if (!task->installedMods().isEmpty()) {
+        summary += tr("Installed:") + '\n' + bulletList(task->installedMods()) + '\n';
+    }
+    if (!task->skippedMods().isEmpty()) {
+        summary += tr("Already installed or replaced by another mod:") + '\n' + bulletList(task->skippedMods()) + '\n';
+    }
+    if (!task->unavailableMods().isEmpty()) {
+        summary += tr("Not available for this version:") + '\n' + bulletList(task->unavailableMods()) + '\n';
+    }
+    if (task->installedMods().isEmpty() && task->unavailableMods().isEmpty()) {
+        summary += tr("This instance already has all the performance mods we'd recommend.");
+    } else if (!task->installedMods().isEmpty()) {
+        summary += tr("The mods are active the next time you launch the instance.");
+    }
+    CustomMessageBox::selectable(this, title, summary.trimmed(), QMessageBox::Information)->show();
+}
+
 void MainWindow::on_actionEditInstance_triggered()
 {
     if (!m_selectedInstance)
@@ -1832,6 +1900,7 @@ void MainWindow::updateStatusCenter()
 void MainWindow::setInstanceActionsEnabled(bool enabled)
 {
     ui->actionEditInstance->setEnabled(enabled);
+    ui->actionBoostFps->setEnabled(enabled);
     ui->actionChangeInstGroup->setEnabled(enabled);
     ui->actionViewSelectedInstFolder->setEnabled(enabled);
     ui->actionExportInstance->setEnabled(enabled);
@@ -1913,8 +1982,8 @@ QWidget* MainWindow::createInstanceActionRow(QWidget* parent)
     rowLayout->setContentsMargins(0, 0, 0, 0);
     rowLayout->setSpacing(6);
     rowLayout->addStretch(1);
-    for (auto action : { ui->actionEditInstance, ui->actionViewSelectedInstFolder, ui->actionExportInstance, ui->actionCopyInstance,
-                         ui->actionDeleteInstance }) {
+    for (auto action : { ui->actionEditInstance, ui->actionBoostFps, ui->actionViewSelectedInstFolder, ui->actionExportInstance,
+                         ui->actionCopyInstance, ui->actionDeleteInstance }) {
         auto button = new QToolButton(row);
         button->setDefaultAction(action);
         button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);

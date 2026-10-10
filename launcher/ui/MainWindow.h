@@ -168,6 +168,8 @@ class MainWindow : public QMainWindow {
 
     void on_actionEditInstance_triggered();
 
+    void on_actionBoostFps_triggered();
+
     void on_actionCreateInstanceShortcut_triggered();
 
     void taskEnd();

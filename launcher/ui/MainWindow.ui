@@ -119,6 +119,7 @@
    <addaction name="actionKillInstance"/>
    <addaction name="separator"/>
    <addaction name="actionEditInstance"/>
+   <addaction name="actionBoostFps"/>
    <addaction name="actionChangeInstGroup"/>
    <addaction name="actionViewSelectedInstFolder"/>
    <addaction name="actionExportInstance"/>
@@ -148,6 +149,7 @@
     <addaction name="actionKillInstance"/>
     <addaction name="separator"/>
     <addaction name="actionEditInstance"/>
+    <addaction name="actionBoostFps"/>
     <addaction name="actionChangeInstGroup"/>
     <addaction name="actionViewSelectedInstFolder"/>
     <addaction name="actionExportInstance"/>
@@ -438,6 +440,17 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+I</string>
+   </property>
+  </action>
+  <action name="actionBoostFps">
+   <property name="icon">
+    <iconset theme="star"/>
+   </property>
+   <property name="text">
+    <string>Boost &amp;FPS</string>
+   </property>
+   <property name="toolTip">
+    <string>Install the best performance mods (Sodium, Lithium, FerriteCore...) for the selected instance's version and mod loader.</string>
    </property>
   </action>
   <action name="actionViewSelectedInstFolder">
