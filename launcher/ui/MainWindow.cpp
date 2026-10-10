@@ -958,8 +958,9 @@ void MainWindow::processURLs(QList<QUrl> urls)
                 } else {
                     CustomMessageBox::selectable(
                         this, tr("Error"),
-                        tr("Unsupported Modrinth link.\n\nPrism Launcher currently only supports modpack links such as "
-                           "modrinth://modpack/fabulously-optimized."),
+                        tr("Unsupported Modrinth link.\n\n%1 currently only supports modpack links such as "
+                           "modrinth://modpack/fabulously-optimized.")
+                            .arg(BuildConfig.LAUNCHER_DISPLAYNAME),
                         QMessageBox::Critical)
                         ->show();
                 }
@@ -1045,7 +1046,7 @@ void MainWindow::processURLs(QList<QUrl> urls)
                 emit APPLICATION->oauthReplyRecieved(receivedData);
                 continue;
             } else if ((url.scheme() == "prismlauncher" || url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME) && isExternalURLImport) {
-                // PrismLauncher URL protocol modpack import
+                // Launcher URL protocol modpack import (the legacy prismlauncher:// scheme is still accepted)
                 // works for any prism fork
                 // preferred import format: prismlauncher://import?url=ENCODED
                 const auto host = url.host().toLower();
